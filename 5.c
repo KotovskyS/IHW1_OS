@@ -7,26 +7,24 @@
 
 #define BUFFER_SIZE 5000
 
-void concatenate(char* s1, char* s2, char* output) {
+void concatenate(char *s1, char *s2, char *output) {
     int ascii[128] = {0}; // initialize all ASCII values to 0
-    int len = strlen(s1) + strlen(s2);
     int count = 0;
-    char final_output[BUFFER_SIZE];
 
     for (int i = 0; i < strlen(s1); i++) {
         if (s1[i] == '\n') {
             continue;
         }
-        if (ascii[(int)s1[i]] == 0) { // if the character has not been encountered before
-            ascii[(int)s1[i]] = 1; // mark it as encountered
+        if (ascii[(int) s1[i]] == 0) { // if the character has not been encountered before
+            ascii[(int) s1[i]] = 1; // mark it as encountered
             output[count] = s1[i]; // add it to the output string
             count++;
         }
     }
 
     for (int i = 0; i < strlen(s2); i++) {
-        if (ascii[(int)s2[i]] == 0) { // if the character has not been encountered before
-            ascii[(int)s2[i]] = 1; // mark it as encountered
+        if (ascii[(int) s2[i]] == 0) { // if the character has not been encountered before
+            ascii[(int) s2[i]] = 1; // mark it as encountered
             output[count] = s2[i]; // add it to the output string
             count++;
         }
@@ -36,7 +34,7 @@ void concatenate(char* s1, char* s2, char* output) {
 }
 
 int main(int argc, char *argv[]) {
-    int fd1[2], fd2[2];
+    int fifo1, fifo2;
     pid_t pid1, pid2, pid3;
 
     char buffer1[BUFFER_SIZE], buffer2[BUFFER_SIZE], result[BUFFER_SIZE];
@@ -77,18 +75,13 @@ int main(int argc, char *argv[]) {
     if (pid1 == 0) {
         // Дочерний процесс - первый процесс
 
-        // Закрываем неиспользуемые концы каналов
-        close(fd1[0]);
-        close(fd2[0]);
-        close(fd2[1]);
-
         // Read the input file into a buffer
         char input_buffer[BUFFER_SIZE];
         size_t input_size = fread(input_buffer, 1, BUFFER_SIZE, input_file);
         fclose(input_file);
 
         // Write the input buffer to the named pipe
-        int fifo1 = open("fifo1", O_WRONLY);
+        fifo1 = open("fifo1", O_WRONLY);
         write(fifo1, input_buffer, input_size);
         close(fifo1);
 
@@ -107,12 +100,8 @@ int main(int argc, char *argv[]) {
     if (pid2 == 0) {
         // Дочерний процесс - второй процесс
 
-        // Закрываем неиспользуемые концы каналов
-        close(fd1[1]);
-        close(fd2[0]);
-
         // Читаем данные из named pipe
-        int fifo1 = open("fifo1", O_RDONLY);
+        fifo1 = open("fifo1", O_RDONLY);
         read(fifo1, &buffer1, BUFFER_SIZE);
         read(fifo1, &buffer2, BUFFER_SIZE);
         close(fifo1);
@@ -121,8 +110,8 @@ int main(int argc, char *argv[]) {
         concatenate(buffer1, buffer2, result);
 
         // Write the result to the named pipe
-        int fifo2 = open("fifo2", O_WRONLY);
-        write(fifo2, result, strlen(result)+1);
+        fifo2 = open("fifo2", O_WRONLY);
+        write(fifo2, result, strlen(result) + 1);
         close(fifo2);
 
         // Завершаем работу процесса
@@ -140,30 +129,20 @@ int main(int argc, char *argv[]) {
     if (pid3 == 0) {
         // Дочерний процесс - третий процесс
 
-        // Закрываем неиспользуемые концы каналов
-        close(fd1[0]);
-        close(fd1[1]);
-        close(fd2[1]);
-
         // Читаем данные из named pipe
-        int fifo2 = open("fifo2", O_RDONLY);
+        fifo2 = open("fifo2", O_RDONLY);
         read(fifo2, result, BUFFER_SIZE);
         close(fifo2);
 
         // Записываем результат в файл
-        fprintf(output_file, "%s", result);
+        fwrite(result, sizeof(char), strlen(result), output_file);
 
         // Завершаем работу процесса
         exit(0);
     }
 
-    // Родительский процесс
-
-    // Закрываем неиспользуемые концы каналов
-    close(fd1[0]);
-    close(fd1[1]);
-    close(fd2[0]);
-    close(fd2[1]);
+    close(fifo1);
+    close(fifo2);
 
     // Ожидаем завершения всех дочерних процессов
     waitpid(pid1, NULL, 0);

@@ -2,31 +2,28 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <fcntl.h>
 #include <sys/wait.h>
 
 #define BUFFER_SIZE 5000
 
-void concatenate(char* s1, char* s2, char* output) {
+void concatenate(char *s1, char *s2, char *output) {
     int ascii[128] = {0}; // initialize all ASCII values to 0
-    int len = strlen(s1) + strlen(s2);
     int count = 0;
-    char final_output[BUFFER_SIZE];
 
     for (int i = 0; i < strlen(s1); i++) {
         if (s1[i] == '\n') {
             continue;
         }
-        if (ascii[(int)s1[i]] == 0) { // if the character has not been encountered before
-            ascii[(int)s1[i]] = 1; // mark it as encountered
+        if (ascii[(int) s1[i]] == 0) { // if the character has not been encountered before
+            ascii[(int) s1[i]] = 1; // mark it as encountered
             output[count] = s1[i]; // add it to the output string
             count++;
         }
     }
 
     for (int i = 0; i < strlen(s2); i++) {
-        if (ascii[(int)s2[i]] == 0) { // if the character has not been encountered before
-            ascii[(int)s2[i]] = 1; // mark it as encountered
+        if (ascii[(int) s2[i]] == 0) { // if the character has not been encountered before
+            ascii[(int) s2[i]] = 1; // mark it as encountered
             output[count] = s2[i]; // add it to the output string
             count++;
         }
@@ -75,69 +72,67 @@ int main(int argc, char *argv[]) {
     }
 
     if (pid1 == 0) {
-    // Дочерний процесс - первый процесс
+        // Дочерний процесс - первый процесс
+
+        // Закрываем неиспользуемые концы каналов
+        close(pipefd[0]);
+        close(pipefd2[1]);
+
+        // Read the input file into a buffer
+        char input_buffer[BUFFER_SIZE];
+        size_t input_size = fread(input_buffer, 1, BUFFER_SIZE, input_file);
+        fclose(input_file);
+
+        // Write the input buffer to the first pipe
+        write(pipefd[1], input_buffer, input_size);
+
+        // Read the result from the second pipe
+        read(pipefd2[0], result, BUFFER_SIZE);
+
+        // Write the result to the output file
+        fwrite(result, sizeof(char), strlen(result), output_file);
+
+        // Завершаем работу процесса
+        exit(0);
+    }
+
+    // Создаем второй процесс
+    pid2 = fork();
+
+    if (pid2 == -1) {
+        perror("Error forking second process");
+        return 1;
+    }
+
+    if (pid2 == 0) {
+        // Дочерний процесс - второй процесс
+
+        // Закрываем неиспользуемые концы каналов
+        close(pipefd[1]);
+        close(pipefd2[0]);
+
+        // Read the input buffer from the first pipe
+        read(pipefd[0], buffer1, BUFFER_SIZE);
+
+        // Запускаем обработку данных
+        concatenate(buffer1, buffer2, result);
+
+        // Write the result to the second pipe
+        write(pipefd2[1], result, strlen(result) + 1);
+
+        // Завершаем работу процесса
+        exit(0);
+    }
 
     // Закрываем неиспользуемые концы каналов
     close(pipefd[0]);
-    close(pipefd2[1]);
-
-    // Read the input file into a buffer
-    char input_buffer[BUFFER_SIZE];
-    size_t input_size = fread(input_buffer, 1, BUFFER_SIZE, input_file);
-    fclose(input_file);
-
-    // Write the input buffer to the first pipe
-    write(pipefd[1], input_buffer, input_size);
-
-    // Read the result from the second pipe
-    read(pipefd2[0], result, BUFFER_SIZE);
-
-    // Write the result to the output file
-    fprintf(output_file, "%s", result);
-
-    // Завершаем работу процесса
-    exit(0);
-}
-
-// Создаем второй процесс
-pid2 = fork();
-
-if (pid2 == -1) {
-    perror("Error forking second process");
-    return 1;
-}
-
-if (pid2 == 0) {
-    // Дочерний процесс - второй процесс
-
-    // Закрываем неиспользуемые концы каналов
     close(pipefd[1]);
     close(pipefd2[0]);
+    close(pipefd2[1]);
 
-    // Read the input buffer from the first pipe
-    read(pipefd[0], buffer1, BUFFER_SIZE);
+    // Ожидаем завершения всех дочерних процессов
+    waitpid(pid1, NULL, 0);
+    waitpid(pid2, NULL, 0);
 
-    // Запускаем обработку данных
-    concatenate(buffer1, "", result);
-
-    // Write the result to the second pipe
-    write(pipefd2[1], result, strlen(result)+1);
-
-    // Завершаем работу процесса
-    exit(0);
-}
-
-// Родительский процесс
-
-// Закрываем неиспользуемые концы каналов
-close(pipefd[0]);
-close(pipefd[1]);
-close(pipefd2[0]);
-close(pipefd2[1]);
-
-// Ожидаем завершения всех дочерних процессов
-waitpid(pid1, NULL, 0);
-waitpid(pid2, NULL, 0);
-
-return 0;
+    return 0;
 }
